@@ -44,22 +44,22 @@ pdf_loading:
     # by_title: 按标题分块
     chunking_strategy: "by_title"
     # 超过指定字符数后强制新块
-    max_characters: 1500
+    max_characters: 1000
     # 小块自动合并
-    combine_text_under_n_chars: 500
+    combine_text_under_n_chars: 250
     # 提取图片对象
     extract_images_in_pdf: False
     # 元素中添加分页标记-文档引用定位、页码追踪
     include_page_breaks: True
     # 每个元素自动检测语言类型
-    detect_language_per_element: False
+    detect_language_per_element: True
     # 选择语言
     languages: ["chi_sim", "eng"]
 
 # 检索配置
 retrieval:
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
-  top_k: 3              # 检索返回的文档数
+  top_k: 8           # 检索返回的文档数
 
 # 大模型配置
 llm:

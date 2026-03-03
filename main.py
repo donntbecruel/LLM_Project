@@ -181,7 +181,7 @@ class RAGSystem:
                     continue
 
                 print("\n🤖 正在思考...")
-                result = self.rag_core.answer_with_rag(question)
+                result = self.rag_core.answer_with_rag(question, self.config['retrieval']['top_k'])
                 
                 print(f"\n💡 回答:\n{result['answer']}")
                 print(f"\n📚 参考了 {len(result['retrieved_docs'])} 个文档片段")
@@ -202,8 +202,8 @@ class RAGSystem:
         print("="*50 + "\n")
 
         # 询问问题文件路径
-        questions_file = input("请输入问题文件路径 (.txt, 每行一个问题): ").strip()
-        
+        questions_file = 'D:/Learn/machine_learning/LLM_Project/data/questions.txt'
+
         if not os.path.exists(questions_file):
             print(f"❌ 文件不存在: {questions_file}")
             return
@@ -232,7 +232,7 @@ class RAGSystem:
             try:
                 # RAG回答
                 print("🔄 RAG模式回答中...")
-                rag_result = self.rag_core.answer_with_rag(question)
+                rag_result = self.rag_core.answer_with_rag(question, self.config['retrieval']['top_k'])
                 print(f"✅ RAG回答完成")
 
                 # 非RAG回答
@@ -259,11 +259,10 @@ class RAGSystem:
                 })
 
         # 保存结果
-        output_dir = os.path.join(self.config['paths'].get('output_dir', 'outputs'), 'evaluation_results')
+        output_dir = os.path.join(self.config['paths']['output_dir'], 'evaluation_results', f'topk_{self.config['retrieval']['top_k']}')
         os.makedirs(output_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = os.path.join(output_dir, f"rag_vs_non_rag_{timestamp}.json")
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = os.path.join(output_dir, "result.json")
         
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
@@ -355,7 +354,7 @@ class RAGSystem:
         print("⚖️  评委模型评分")
         print("="*50 + "\n")
 
-        output_dir = self.config['paths'].get('output_dir', 'outputs')
+        output_dir = os.path.join(self.config['paths']['output_dir'])
         eval_dir = os.path.join(output_dir, 'evaluation_results')
         eval_py_path = os.path.join(eval_dir, 'eval.py')
 
@@ -363,20 +362,8 @@ class RAGSystem:
             print(f"❌ 未找到评测脚本: {eval_py_path}")
             return
 
-        default_input = os.path.join(eval_dir, 'result.json')
-        if not os.path.exists(default_input):
-            candidates = glob(os.path.join(eval_dir, "rag_vs_non_rag_*.json"))
-            if candidates:
-                candidates.sort(key=os.path.getmtime, reverse=True)
-                default_input = candidates[0]
-
-        input_file = input(f"请输入待评分JSON路径（回车默认: {default_input}）: ").strip() or default_input
-        if not os.path.exists(input_file):
-            print(f"❌ 输入文件不存在: {input_file}")
-            return
-
-        default_output = os.path.join(eval_dir, 'scoring.json')
-        output_file = input(f"请输入评分输出路径（回车默认: {default_output}）: ").strip() or default_output
+        input_file = os.path.join(output_dir, 'evaluation_results', f'topk_{self.config['retrieval']['top_k']}', 'result.json')
+        output_file = os.path.join(output_dir, 'evaluation_results', f'topk_{self.config['retrieval']['top_k']}', 'scoring.json')
 
         try:
             spec = importlib.util.spec_from_file_location("eval_module", eval_py_path)
@@ -397,6 +384,169 @@ class RAGSystem:
         except Exception as e:
             print(f"\n❌ 评分失败: {str(e)}")
 
+    def _load_eval_module(self):
+        """动态加载 outputs/evaluation_results/eval.py 模块"""
+        output_dir = os.path.join(self.config['paths']['output_dir'])
+        eval_dir = os.path.join(output_dir, 'evaluation_results')
+        eval_py_path = os.path.join(eval_dir, 'eval.py')
+
+        if not os.path.exists(eval_py_path):
+            raise FileNotFoundError(f"未找到评测脚本: {eval_py_path}")
+
+        spec = importlib.util.spec_from_file_location("eval_module", eval_py_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("无法加载评测模块")
+
+        eval_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(eval_module)
+        return eval_module
+
+    def analyze_specific_topk(self):
+        """分析指定 topk 的 result/scoring 结果"""
+        print("\n" + "="*50)
+        print("📈 分析指定 TopK 结果")
+        print("="*50 + "\n")
+
+        topk_input = input("请输入要分析的 topk（如 1/3/5/8）: ").strip()
+        if not topk_input.isdigit():
+            print("❌ 输入无效，请输入正整数")
+            return
+        topk = int(topk_input)
+        if topk <= 0:
+            print("❌ topk 必须大于 0")
+            return
+
+        try:
+            eval_module = self._load_eval_module()
+            output_dir = os.path.join(self.config['paths']['output_dir'])
+            eval_dir = os.path.join(output_dir, 'evaluation_results')
+            result = eval_module.analyze_topk_result(topk=topk, evaluation_results_dir=eval_dir)
+
+            print("\n✅ 分析完成")
+            print(f"📁 目录: {result['paths']['topk_dir']}")
+            print(f"📄 result: {result['paths']['result_json']}")
+            print(f"📄 scoring: {result['paths']['scoring_json']}")
+            print(f"🧪 一致性检查: {result['consistency_check']}")
+            print(f"🏆 胜负统计: {result['winner_count']}")
+            print(f"📊 胜率(%): {result['winner_rate_percent']}")
+            print(f"🧮 分数统计: {result['score_stats']}")
+            print(f"⚠️ 错误数: {result['error_count']}")
+        except Exception as e:
+            print(f"\n❌ 分析失败: {str(e)}")
+
+    def analyze_all_topk(self):
+        """分析 outputs/evaluation_results 下全部 topk_* 结果"""
+        print("\n" + "="*50)
+        print("📈 分析全部 TopK 结果")
+        print("="*50 + "\n")
+
+        try:
+            eval_module = self._load_eval_module()
+            output_dir = os.path.join(self.config['paths']['output_dir'])
+            eval_dir = os.path.join(output_dir, 'evaluation_results')
+            result = eval_module.analyze_all_topk_results(evaluation_results_dir=eval_dir)
+
+            print("\n✅ 全部分析完成")
+            print(f"📂 基础目录: {result['base_dir']}")
+            print(f"🔢 检测到 topk: {result['topk_list']}")
+            print(f"⭐ 最佳 topk: {result['best_topk']}")
+            print("\n各 topk 摘要:")
+            for item in result['reports']:
+                topk = item.get('topk')
+                if item.get('error'):
+                    print(f"  - topk_{topk}: ❌ {item['error']}")
+                    continue
+                winners = item.get('winner_count', {})
+                scores = item.get('score_stats', {})
+                print(
+                    f"  - topk_{topk}: A/B/Tie/Invalid="
+                    f"{winners.get('A', 0)}/{winners.get('B', 0)}/"
+                    f"{winners.get('Tie', 0)}/{winners.get('Invalid', 0)}, "
+                    f"avgA={scores.get('avg_total_score_A')}, "
+                    f"avgB={scores.get('avg_total_score_B')}"
+                )
+
+            # ---------------- 消融实验对比 ----------------
+            # 目标：观察不同 topk 下 A/B 回答表现的变化趋势与相对基线增益
+            valid_reports = [x for x in result.get('reports', []) if not x.get('error')]
+            if not valid_reports:
+                print("\n🧪 消融实验结果: 无可用数据")
+                return
+
+            valid_reports.sort(key=lambda x: x.get('topk', 10**9))
+            baseline = valid_reports[0]
+            base_topk = baseline.get('topk')
+            base_rates = baseline.get('winner_rate_percent', {})
+            base_scores = baseline.get('score_stats', {})
+
+            def _num(v, default=0.0):
+                return float(v) if isinstance(v, (int, float)) else float(default)
+
+            base_a_rate = _num(base_rates.get('A'))
+            base_b_rate = _num(base_rates.get('B'))
+            base_gap = _num(base_scores.get('avg_score_gap_A_minus_B'))
+            base_avg_a = _num(base_scores.get('avg_total_score_A'))
+            base_avg_b = _num(base_scores.get('avg_total_score_B'))
+
+            # 同时构造可落盘文本
+            comparison_lines = []
+            comparison_lines.append("=" * 60)
+            comparison_lines.append("TopK A/B 消融实验对比结果")
+            comparison_lines.append("=" * 60)
+            comparison_lines.append(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            comparison_lines.append(f"基线: topk_{base_topk}")
+            comparison_lines.append("字段说明: A胜率/B胜率(%)、A均分/B均分、Gap=A均分-B均分")
+            comparison_lines.append("         Δ表示相对基线(topk_最小)变化")
+            comparison_lines.append("-" * 60)
+
+            print("\n" + "-"*50)
+            print("🧪 A/B消融实验（不同 TopK）")
+            print("-"*50)
+            print(f"基线: topk_{base_topk}")
+            print("字段说明: A胜率/B胜率(%)、A均分/B均分、Gap=A均分-B均分")
+            print("         Δ表示相对基线(topk_最小)变化")
+            print("-"*50)
+
+            for item in valid_reports:
+                topk = item.get('topk')
+                rates = item.get('winner_rate_percent', {})
+                scores = item.get('score_stats', {})
+
+                a_rate = _num(rates.get('A'))
+                b_rate = _num(rates.get('B'))
+                avg_a = _num(scores.get('avg_total_score_A'))
+                avg_b = _num(scores.get('avg_total_score_B'))
+                gap = _num(scores.get('avg_score_gap_A_minus_B'))
+
+                delta_a_rate = round(a_rate - base_a_rate, 2)
+                delta_b_rate = round(b_rate - base_b_rate, 2)
+                delta_gap = round(gap - base_gap, 4)
+                delta_avg_a = round(avg_a - base_avg_a, 4)
+                delta_avg_b = round(avg_b - base_avg_b, 4)
+
+                line = (
+                    f"topk_{topk}: "
+                    f"A胜率={a_rate:.2f}% (Δ{delta_a_rate:+.2f}), "
+                    f"B胜率={b_rate:.2f}% (Δ{delta_b_rate:+.2f}), "
+                    f"A均分={avg_a:.4f} (Δ{delta_avg_a:+.4f}), "
+                    f"B均分={avg_b:.4f} (Δ{delta_avg_b:+.4f}), "
+                    f"Gap={gap:.4f} (Δ{delta_gap:+.4f})"
+                )
+                print(line)
+                comparison_lines.append(line)
+            print("-"*50)
+
+            # 保存到 outputs/evaluation_results/topk_comparation.txt
+            output_dir = os.path.join(self.config['paths']['output_dir'])
+            eval_dir = os.path.join(output_dir, 'evaluation_results')
+            os.makedirs(eval_dir, exist_ok=True)
+            comparison_path = os.path.join(eval_dir, "topk_comparation.txt")
+            with open(comparison_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(comparison_lines) + "\n")
+            print(f"💾 消融对比结果已保存: {comparison_path}")
+        except Exception as e:
+            print(f"\n❌ 全部分析失败: {str(e)}")
+
     def show_menu(self):
         """显示主菜单"""
         print("\n" + "="*50)
@@ -410,7 +560,9 @@ class RAGSystem:
         print("  [5] 查看数据库统计")
         print("  [6] 清空向量数据库")
         print("  [7] 评委模型评分")
-        print("  [8] 退出系统")
+        print("  [8] 分析指定TopK结果")
+        print("  [9] 分析全部TopK结果")
+        print("  [0] 退出系统")
         print("\n状态:")
         print(f"  📖 PDF已处理: {'✅' if self.check_pdf_processed() else '❌'}")
         print(f"  🗄️  知识库已构建: {'✅' if self.check_vector_db_built() else '❌'}")
@@ -421,7 +573,7 @@ class RAGSystem:
         while True:
             try:
                 self.show_menu()
-                choice = input("\n请输入选项 (1-8): ").strip()
+                choice = input("\n请输入选项 (0-9): ").strip()
 
                 if choice == '1':
                     self.process_pdfs()
@@ -438,10 +590,14 @@ class RAGSystem:
                 elif choice == '7':
                     self.run_judge_evaluation()
                 elif choice == '8':
+                    self.analyze_specific_topk()
+                elif choice == '9':
+                    self.analyze_all_topk()
+                elif choice == '0':
                     print("\n👋 感谢使用，再见！")
                     break
                 else:
-                    print("\n❌ 无效选项，请输入1-8之间的数字")
+                    print("\n❌ 无效选项，请输入0-9之间的数字")
 
             except KeyboardInterrupt:
                 print("\n\n👋 程序已中断，再见！")
@@ -450,7 +606,6 @@ class RAGSystem:
                 print(f"\n❌ 发生错误: {str(e)}")
                 import traceback
                 traceback.print_exc()
-
 
 if __name__ == "__main__":
     system = RAGSystem()

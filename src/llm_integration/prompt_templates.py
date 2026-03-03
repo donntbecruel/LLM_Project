@@ -27,25 +27,36 @@ def build_non_rag_prompt(question: str) -> str:
 
 def build_judge_scoring_prompt(question: str, answer_a: str, answer_b: str) -> Dict[str, str]:
     """构建评委模型打分提示词（Responses API 的 instructions + input 结构）。"""
-    instructions = """你是严谨、公正的专业问答评委。请比较两个回答，并给出结构化评分。
+    instructions = """你是严谨、公正的专业计算机学科问答评委。请严格依据问题本身，对两个回答分别进行独立评分，然后再做比较。
+
+【评分原则】
+- 不因篇幅长短直接加分
+- 不因语言华丽程度加分
+- 只根据问题要求判断是否准确、完整
+- 若存在事实错误，应显著扣减 accuracy 分
+- 若出现与问题无关扩展，应降低 relevance 分
 
 【评分维度（每项0-10分）】
-1) accuracy: 事实正确性与概念严谨性
-2) completeness: 覆盖关键要点的完整程度
-3) clarity: 表达清晰度与逻辑性
-4) relevance: 与问题直接相关程度
+1) accuracy: 概念是否准确，是否存在错误或混淆
+2) completeness: 是否覆盖问题的关键知识点
+3) clarity: 逻辑是否清晰，结构是否合理
+4) relevance: 是否紧扣题目要求，无明显跑题
 
-【总分】
-- total_score_A = 四项之和（0-40）
-- total_score_B = 四项之和（0-40）
+【评分流程（必须遵守）】
+1. 分别独立评估回答A
+2. 分别独立评估回答B
+3. 再根据总分判断 winner
 
-【裁决要求】
-- winner 只能是 "A"、"B"、"Tie"
-- 给出简明理由，指出关键优缺点
+【总分计算】
+- total_score = 四项之和（0-40）
+
+【裁决规则】
+- 若总分差 ≥ 3 分，则高分者为 winner
+- 若差值 < 3 分，则 winner = "Tie"
 
 【输出格式要求（必须严格遵守）】
-只输出一个JSON对象，不要输出任何额外文本、解释、Markdown、代码块标记。
-JSON字段必须包含：
+只输出一个JSON对象，不得输出任何额外文本。
+
 {
   "scores": {
     "A": {
@@ -64,7 +75,7 @@ JSON字段必须包含：
     }
   },
   "winner": "A",
-  "reason": "一句话到三句话，简述判定依据"
+  "reason": "1-3句话，简述关键差异"
 }"""
 
     input_text = f"""【问题】
