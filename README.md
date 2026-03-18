@@ -1,6 +1,7 @@
-your_rag_project/                 # 项目根目录
+# 自用项目存档
+rag_project/                    # 项目根目录
 │
-├── data/                        # 数据目录
+├── data/                       # 数据目录
 │   ├── raw_pdfs/               # 存放原始PDF文件（如408教材）
 │   └── processed/              # 存放处理后的文本、向量数据库等（.gitignore忽略）
 │
